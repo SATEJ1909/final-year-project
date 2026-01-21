@@ -912,7 +912,7 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   late SocketService _socketService;
 
   // --- Configuration ---
-  bool _isTestingMode = true; 
+  bool _isTestingMode = false; // CHANGED: Use real GPS by default
 
   // --- State ---
   LatLng _currentPosition = const LatLng(20.9374, 77.7796); 
@@ -990,9 +990,79 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   }
 
   Future<void> _locateMe() async {
-    Position p = await Geolocator.getCurrentPosition();
-    setState(() => _currentPosition = LatLng(p.latitude, p.longitude));
-    _mapController.move(_currentPosition, 16.0);
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('GPS is disabled. Please enable location services.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Check permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Location permission denied. Please grant permission in settings.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission permanently denied. Enable in device settings.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Get current position
+      Position p = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      if (mounted) {
+        setState(() => _currentPosition = LatLng(p.latitude, p.longitude));
+        _mapController.move(_currentPosition, 16.0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Location acquired successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to get location: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 
   @override

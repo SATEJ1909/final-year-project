@@ -8,6 +8,9 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import userRouter from './routes/routes.js';
 import { handleJoin, handleUpdateLocation, handleDisconnect } from './controller/locationController.js';
+import redisClient from './redisClient.js';
+// Redis key for police locations
+const POLICE_GEO_KEY = 'police_locations';
 const app = express();
 app.use(cors({
     origin: "*",
@@ -57,6 +60,26 @@ async function main() {
         });
         socket.on('disconnect', async () => {
             await handleDisconnect(socket);
+        });
+        // NEW: Handle police location updates
+        socket.on('updatePoliceLocation', async (payload) => {
+            const { lat, lng } = payload;
+            // Get userId from socket (set during authentication or join)
+            const userId = socket.userId || payload.userId;
+            if (userId && lat && lng) {
+                try {
+                    // Update police location in Redis geospatial index
+                    await redisClient.geoAdd(POLICE_GEO_KEY, {
+                        longitude: lng,
+                        latitude: lat,
+                        member: userId,
+                    });
+                    console.log(`[Redis] Updated police location for ${userId}: (${lat}, ${lng})`);
+                }
+                catch (err) {
+                    console.error('Error updating police location:', err);
+                }
+            }
         });
         socket.on('journey_end', async (payload) => {
             // Logic to handle the end of a trip

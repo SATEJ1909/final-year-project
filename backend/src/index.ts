@@ -8,6 +8,10 @@ import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import userRouter from './routes/routes.js';
 import { handleJoin, handleUpdateLocation, handleDisconnect } from './controller/locationController.js';
+import redisClient from './redisClient.js';
+
+// Redis key for police locations
+const POLICE_GEO_KEY = 'police_locations';
 
 const app = express();
 app.use(cors({
@@ -28,12 +32,12 @@ async function main() {
 
   // Create Socket.IO server attached to our HTTP server.
   const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
-  }
-});
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+      allowedHeaders: ["Content-Type"],
+    }
+  });
 
 
   // Authenticate socket connections using a provided JWT token in the query.
@@ -69,6 +73,27 @@ async function main() {
       await handleDisconnect(socket);
     });
 
+    // NEW: Handle police location updates
+    socket.on('updatePoliceLocation', async (payload) => {
+      const { lat, lng } = payload;
+      // Get userId from socket (set during authentication or join)
+      const userId = (socket as any).userId || payload.userId;
+
+      if (userId && lat && lng) {
+        try {
+          // Update police location in Redis geospatial index
+          await redisClient.geoAdd(POLICE_GEO_KEY, {
+            longitude: lng,
+            latitude: lat,
+            member: userId,
+          });
+          console.log(`[Redis] Updated police location for ${userId}: (${lat}, ${lng})`);
+        } catch (err) {
+          console.error('Error updating police location:', err);
+        }
+      }
+    });
+
     socket.on('journey_end', async (payload) => {
       // Logic to handle the end of a trip
       // e.g., mark driver as 'available', remove from active trips, etc.
@@ -76,7 +101,7 @@ async function main() {
       console.log('Journey ended for socket:', socket.id, 'Payload:', payload);
       await handleDisconnect(socket); // Or a new function like handleJourneyEnd(socket)
     });
-    
+
   });
 
   const PORT = Number(process.env.PORT) || 3000;

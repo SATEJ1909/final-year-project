@@ -26,7 +26,7 @@ class AuthService {
   // --- IMPORTANT ---
   // For Android emulator, use 10.0.2.2 instead of localhost.
   // For physical devices, use your computer's local IP address.
-  static const String _baseUrl = "http://localhost:5000/api/v1/user";
+  static const String _baseUrl = "https://final-year-app.onrender.com/api/v1/user";
 
   /// Registers a new user by sending their details to the backend.
   ///

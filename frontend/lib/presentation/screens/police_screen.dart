@@ -770,6 +770,9 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
     _pulseController.repeat(reverse: true);
 
     _connectAndListen();
+    
+    // 3. Get actual device location on init
+    _getInitialLocation();
   }
 
   void _connectAndListen() {
@@ -778,6 +781,48 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
       if (mounted) setState(() => _activeAmbulances[pos.ambulanceId] = pos);
     });
     _socketService.alertStream.listen((alert) => _triggerAlert(alert));
+  }
+
+  // --- GET INITIAL GPS LOCATION ---
+  Future<void> _getInitialLocation() async {
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        // Location services disabled, stay with default location
+        return;
+      }
+
+      // Check permissions
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          // Permission denied, stay with default location
+          return;
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        // Permission permanently denied, stay with default location
+        return;
+      }
+
+      // Get current position
+      Position p = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      
+      if (mounted) {
+        _setNewBaseLocation(
+          LatLng(p.latitude, p.longitude),
+          'My Current Location'
+        );
+      }
+    } catch (e) {
+      // If GPS fails, just stay with default location
+      print('Police GPS acquisition failed: $e');
+    }
   }
 
   // --- THE PROFESSIONAL TRIGGER ---

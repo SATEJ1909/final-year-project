@@ -73,15 +73,15 @@ class SocketService with ChangeNotifier {
     _socket.onError((data) => print('Socket Error: $data'));
 
     // --- LISTENERS FOR INCOMING EVENTS ---
-    _socket.on('positionUpdate', (data) {
+    _socket.on('ambulancePositionUpdate', (data) {
       try {
         _positionUpdateController.add(AmbulancePosition.fromJson(data));
       } catch (e) {
-        print('Error parsing positionUpdate: $e');
+        print('Error parsing ambulancePositionUpdate: $e');
       }
     });
 
-    _socket.on('proximityAlert', (data) {
+    _socket.on('ambulanceProximityAlert', (data) {
       try {
         _alertController.add(ProximityAlert.fromJson(data));
       } catch (e) {
