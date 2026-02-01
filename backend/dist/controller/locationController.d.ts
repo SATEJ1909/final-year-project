@@ -11,6 +11,7 @@ interface LocationUpdatePayload {
     ambulanceId: string;
     lat: number;
     lng: number;
+    heading?: number;
 }
 /**
  * Handles a new user connecting and identifying themselves.
@@ -21,7 +22,7 @@ export declare function handleJoin(socket: Socket, payload: JoinPayload): Promis
 /**
  * Handles an ambulance's location update, broadcasting it and checking for proximity alerts.
  * @param io The main Socket.IO server instance.
- * @param payload The data from the ambulance (ambulanceId, lat, lng).
+ * @param payload The data from the ambulance (ambulanceId, lat, lng, heading).
  */
 export declare function handleUpdateLocation(io: Server, payload: LocationUpdatePayload): Promise<void>;
 /**

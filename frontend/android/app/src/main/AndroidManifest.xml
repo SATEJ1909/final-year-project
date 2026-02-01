@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
     
+    <!-- Vibration permission for proximity alerts -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    
     <application
         android:label="finalyr"
         android:name="${applicationName}"

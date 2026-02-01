@@ -44,5 +44,6 @@ flutter:
   assets:
     - assets/images/hero_illustration.svg
     - assets/images/ambulance_marker.svg
+    - assets/sounds/siren.mp3
   
 

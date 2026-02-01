@@ -57,7 +57,7 @@ async function main() {
   });
 
   io.on('connection', (socket) => {
-    console.log('New socket connected', socket.id);
+    console.log(`[Server] New socket connected: ${socket.id}`);
 
     // Listen for 'join' events from clients.
     socket.on('join', async (payload) => {
@@ -76,7 +76,7 @@ async function main() {
     // NEW: Handle police location updates
     socket.on('updatePoliceLocation', async (payload) => {
       const { lat, lng } = payload;
-      // Get userId from socket (set during authentication or join)
+      // Get userId from socket (set during authentication or join) or from payload
       const userId = (socket as any).userId || payload.userId;
 
       if (userId && lat && lng) {
@@ -87,10 +87,12 @@ async function main() {
             latitude: lat,
             member: userId,
           });
-          console.log(`[Redis] Updated police location for ${userId}: (${lat}, ${lng})`);
+          console.log(`[Server] ✓ Updated police location for ${userId}: (${lat}, ${lng})`);
         } catch (err) {
-          console.error('Error updating police location:', err);
+          console.error('[Server] Error updating police location:', err);
         }
+      } else {
+        console.warn(`[Server] Invalid police location update - userId: ${userId}, lat: ${lat}, lng: ${lng}`);
       }
     });
 

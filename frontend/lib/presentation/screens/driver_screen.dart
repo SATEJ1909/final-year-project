@@ -919,6 +919,8 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   double _currentHeading = 0.0;
   bool _isLive = false;
   bool _autoFollow = true;
+  double _currentSpeed = 0.0; // km/h
+  List<LatLng> _routeHistory = []; // Trail of last positions
 
   StreamSubscription<Position>? _gpsSub;
   AnimationController? _moveAnim;
@@ -957,24 +959,34 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   void _startRealTracking() {
     _gpsSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 3),
-    ).listen((p) => _onLocationNew(LatLng(p.latitude, p.longitude)));
+    ).listen((p) {
+      setState(() => _currentSpeed = p.speed * 3.6); // m/s to km/h
+      _onLocationNew(LatLng(p.latitude, p.longitude));
+    });
   }
 
   void _onLocationNew(LatLng target) {
     double heading = _calculateAngle(_currentPosition, target);
+    
+    // Add to route history for trail
+    setState(() {
+      _routeHistory.add(target);
+      if (_routeHistory.length > 30) _routeHistory.removeAt(0); // Keep last 30 points
+    });
+    
     _glideTo(target, heading);
     _socketService.sendLocationUpdate(ambulanceId: widget.userId, lat: target.latitude, lng: target.longitude, heading: heading);
   }
 
   void _glideTo(LatLng end, double heading) {
     _moveAnim?.dispose();
-    _moveAnim = AnimationController(duration: const Duration(milliseconds: 1500), vsync: this);
+    _moveAnim = AnimationController(duration: const Duration(milliseconds: 1200), vsync: this); // Shorter duration for smoother feel
     final latT = Tween<double>(begin: _currentPosition.latitude, end: end.latitude);
     final lngT = Tween<double>(begin: _currentPosition.longitude, end: end.longitude);
     _moveAnim!.addListener(() {
       if (!mounted) return;
       setState(() {
-        _currentPosition = LatLng(latT.evaluate(_moveAnim!), lngT.evaluate(_moveAnim!));
+        _currentPosition = LatLng(latT.evaluate(CurvedAnimation(parent: _moveAnim!, curve: Curves.easeOut)), lngT.evaluate(CurvedAnimation(parent: _moveAnim!, curve: Curves.easeOut))); // Added easing curve
         _currentHeading = heading;
       });
       if (_autoFollow) _mapController.move(_currentPosition, 17.5);
@@ -1090,6 +1102,19 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
                 urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains: const ['a', 'b', 'c'],
               ),
+              
+              // Route trail polyline
+              if (_routeHistory.length > 1)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routeHistory,
+                      strokeWidth: 4.0,
+                      color: _isLive ? Colors.red.withOpacity(0.7) : Colors.grey.withOpacity(0.5),
+                    ),
+                  ],
+                ),
+              
               MarkerLayer(markers: [
                 Marker(
                   point: _currentPosition,
@@ -1103,7 +1128,7 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
             ],
           ),
 
-          // 2. TOP FLOATING NAVIGATION HEADER
+          // 2. TOP FLOATING NAVIGATION HEADER WITH SPEED
           if (_isLive)
             Positioned(
               top: 60, left: 16, right: 16,
@@ -1118,12 +1143,32 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
                   children: [
                     const Icon(Icons.navigation_rounded, color: Colors.greenAccent, size: 30),
                     const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("NAVIGATING LIVE", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-                        Text(_isTestingMode ? "Simulation Active" : "Broadcasting GPS", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("NAVIGATING LIVE", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          Text(_isTestingMode ? "Simulation Active" : "Broadcasting GPS", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    // Speed indicator
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _getSpeedColor(_currentSpeed),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _currentSpeed.toStringAsFixed(0),
+                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                          ),
+                          const Text('km/h', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1202,21 +1247,53 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   }
 
   // A custom vehicle marker widget
+  // Helper method for speed color
+  Color _getSpeedColor(double speed) {
+    if (speed < 40) return Colors.green;
+    if (speed < 60) return Colors.orange;
+    return Colors.red;
+  }
+
   Widget _buildVehicleMarker() {
     return Stack(
       alignment: Alignment.center,
       children: [
-        // Outer Glow
+        // Pulsing glow effect when live
         if (_isLive)
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.blue.withOpacity(0.2),
-            ),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.8, end: 1.2),
+            duration: const Duration(seconds: 2),
+            curve: Curves.easeInOut,
+            builder: (context, value, child) {
+              return Container(
+                width: 60 * value,
+                height: 60 * value,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.red.withOpacity(0.3 / value),
+                ),
+              );
+            },
+            onEnd: () => setState(() {}), // Restart animation
           ),
-        // The Vehicle Arrow
-        const Icon(Icons.navigation_rounded, color: Color(0xFF2979FF), size: 45),
+        // Main marker
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.red,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.5),
+                blurRadius: 15,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: const Icon(Icons.local_hospital, color: Colors.white, size: 28),
+        ),
       ],
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../services/socket_io_service.dart';
 import 'driver_screen.dart';
 import 'police_screen.dart';
 
@@ -29,6 +30,77 @@ class _LoginScreenState extends State<LoginScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// Shows a dialog to configure the socket server URL
+  void _showServerConfigDialog() async {
+    final currentUrl = await SocketService.getSocketUrl();
+    final urlController = TextEditingController(text: currentUrl);
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.settings, color: Color(0xFF007AFF)),
+            SizedBox(width: 10),
+            Text('Server Configuration'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter the socket server URL:',
+              style: TextStyle(fontSize: 14, color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: urlController,
+              decoration: InputDecoration(
+                hintText: 'http://192.168.x.x:5000',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                helperText: 'For local testing, use your computer\'s IP',
+              ),
+              keyboardType: TextInputType.url,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final url = urlController.text.trim();
+              if (url.isNotEmpty) {
+                await SocketService.setSocketUrl(url);
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Server URL set to: $url'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF007AFF),
+            ),
+            child: const Text('Save', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Handles the entire login process.
@@ -92,6 +164,14 @@ class _LoginScreenState extends State<LoginScreen> {
         foregroundColor: const Color(0xFF007AFF),
         elevation: 1,
         automaticallyImplyLeading: true,
+        actions: [
+          // Server configuration button
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Configure Server',
+            onPressed: _showServerConfigDialog,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Padding(

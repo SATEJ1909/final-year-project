@@ -27,7 +27,7 @@ This README describes how the system is organized, how to run it locally, the AP
 The system allows two main roles:
 
 - driver (ambulance/ambulance driver): sends periodic GPS location updates to the server.
-- police: receives map updates and targeted proximity alerts when an ambulance is nearby.
+- police: receives map updates and targeted proximity alerts when an ambulance is within 2.5km.
 The backend receives location updates via Socket.IO, stores/matches police locations in Redis (geospatial index) and broadcasts map updates / proximity alerts. Authentication is provided by JWT tokens returned by the backend upon signup/login.
 
 ## Tech stack

@@ -11,41 +11,52 @@ const USER_SOCKET_HASH_KEY = 'user_sockets'; // A Redis Hash mapping userId to t
  */
 export async function handleJoin(socket, payload) {
     const { userId, role, location } = payload;
-    if (!userId || !role)
+    if (!userId || !role) {
+        console.warn('[LocationController] Invalid join payload:', payload);
         return;
-    console.log(`User joined: ${userId} with role ${role}`);
+    }
+    console.log(`[LocationController] ✓ User joined: ${userId} with role ${role} (socket: ${socket.id})`);
     // Map the user's ID to their unique socket ID for direct messaging later.
     await redisClient.hSet(USER_SOCKET_HASH_KEY, userId, socket.id);
+    console.log(`[LocationController] Mapped ${userId} -> socket ${socket.id}`);
     // If the user is a police officer, add them to the 'police' room and their location to Redis.
     if (role === 'police') {
         socket.join('police');
+        console.log(`[LocationController] Police ${userId} joined 'police' room`);
         if (location?.lat && location?.lng) {
             await redisClient.geoAdd(POLICE_GEO_KEY, {
                 longitude: location.lng,
                 latitude: location.lat,
                 member: userId,
             });
-            console.log(`[Redis] Added police officer ${userId} to geospatial index.`);
+            console.log(`[LocationController] ✓ Added police ${userId} to geo index at (${location.lat}, ${location.lng})`);
+        }
+        else {
+            console.warn(`[LocationController] Police ${userId} joined without location - alerts may not work`);
         }
     }
 }
 /**
  * Handles an ambulance's location update, broadcasting it and checking for proximity alerts.
  * @param io The main Socket.IO server instance.
- * @param payload The data from the ambulance (ambulanceId, lat, lng).
+ * @param payload The data from the ambulance (ambulanceId, lat, lng, heading).
  */
 export async function handleUpdateLocation(io, payload) {
-    const { ambulanceId, lat, lng } = payload;
-    if (!ambulanceId || !lat || !lng)
+    const { ambulanceId, lat, lng, heading } = payload;
+    if (!ambulanceId || !lat || !lng) {
+        console.warn('[LocationController] Invalid location update payload:', payload);
         return;
-    console.log(`Location update from ${ambulanceId}: (${lat}, ${lng})`);
+    }
+    console.log(`[LocationController] Location update from ${ambulanceId}: (${lat}, ${lng})${heading !== undefined ? ` heading: ${heading}°` : ''}`);
     // 1. Broadcast the new location to ALL clients in the 'police' room for general map updates.
-    io.to('police').emit('ambulancePositionUpdate', { ambulanceId, lat, lng });
-    // 2. Perform a geospatial search in Redis to find police within a 1km radius.
+    const positionData = { ambulanceId, lat, lng, heading };
+    io.to('police').emit('ambulancePositionUpdate', positionData);
+    console.log(`[LocationController] Broadcasted position to 'police' room`);
+    // 2. Perform a geospatial search in Redis to find police within a 2.5km radius.
     try {
-        const nearbyPolice = await redisClient.geoSearch(POLICE_GEO_KEY, { longitude: lng, latitude: lat }, { radius: 1, unit: 'km' });
+        const nearbyPolice = await redisClient.geoSearch(POLICE_GEO_KEY, { longitude: lng, latitude: lat }, { radius: 2.5, unit: 'km' });
         if (nearbyPolice.length > 0) {
-            console.log(`Alert: Found nearby police: ${nearbyPolice.join(', ')}`);
+            console.log(`[LocationController] ⚠️ ALERT: Found ${nearbyPolice.length} nearby police: ${nearbyPolice.join(', ')}`);
             // 3. For each nearby officer, get their socket ID and send a targeted alert.
             for (const policeId of nearbyPolice) {
                 const socketId = await redisClient.hGet(USER_SOCKET_HASH_KEY, policeId);
@@ -54,13 +65,19 @@ export async function handleUpdateLocation(io, payload) {
                         ambulanceId,
                         message: `Ambulance ${ambulanceId} is approaching your location!`,
                     });
-                    console.log(`--> Sent proximity alert to ${policeId}`);
+                    console.log(`[LocationController] --> Sent proximity alert to police ${policeId} (socket: ${socketId})`);
+                }
+                else {
+                    console.warn(`[LocationController] Could not find socket ID for police ${policeId}`);
                 }
             }
         }
+        else {
+            console.log(`[LocationController] No nearby police found for ambulance ${ambulanceId}`);
+        }
     }
     catch (err) {
-        console.error('Error during Redis GEOSEARCH:', err);
+        console.error('[LocationController] Error during Redis GEOSEARCH:', err);
     }
 }
 /**
@@ -68,16 +85,20 @@ export async function handleUpdateLocation(io, payload) {
  * @param socket The client's socket instance that disconnected.
  */
 export async function handleDisconnect(socket) {
+    console.log(`[LocationController] Socket disconnecting: ${socket.id}`);
     // To find out which user disconnected, we must do a reverse lookup.
     // We find the userId associated with the disconnected socket.id.
     const allUsers = await redisClient.hGetAll(USER_SOCKET_HASH_KEY);
     const userId = Object.keys(allUsers).find(key => allUsers[key] === socket.id);
     if (userId) {
-        console.log(`User disconnected: ${userId}`);
+        console.log(`[LocationController] User disconnected: ${userId}`);
         // Remove the user from our Redis data stores.
         await redisClient.hDel(USER_SOCKET_HASH_KEY, userId);
         await redisClient.zRem(POLICE_GEO_KEY, userId); // zRem removes from geo index
-        console.log(`[Redis] Cleaned up data for ${userId}.`);
+        console.log(`[LocationController] ✓ Cleaned up data for ${userId}`);
+    }
+    else {
+        console.log(`[LocationController] Socket ${socket.id} disconnected (no user mapping found)`);
     }
 }
 //# sourceMappingURL=locationController.js.map

@@ -173,4 +173,3 @@ class AuthService {
     await prefs.remove('user_id');
   }
 }
-
