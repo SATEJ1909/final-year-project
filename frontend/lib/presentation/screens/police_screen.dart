@@ -111,14 +111,26 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
   }
 
   void _connectAndListen() {
+    print('[PoliceScreen] Connecting with userId: ${widget.userId}, role: police, location: $_currentBaseLocation');
     _socketService.connectAndListen(userId: widget.userId, role: 'police', location: _currentBaseLocation);
+    
     _socketService.positionUpdateStream.listen((pos) {
+      print('[PoliceScreen] 📍 RECEIVED AMBULANCE UPDATE: ${pos.ambulanceId} at (${pos.lat}, ${pos.lng})');
       if (mounted) {
         setState(() => _activeAmbulances[pos.ambulanceId] = pos);
         _updateDistanceToNearest();
+        print('[PoliceScreen] Active ambulances count: ${_activeAmbulances.length}');
       }
+    }, onError: (e) {
+      print('[PoliceScreen] Position stream error: $e');
     });
-    _socketService.alertStream.listen((alert) => _triggerAlert(alert));
+    
+    _socketService.alertStream.listen((alert) {
+      print('[PoliceScreen] 🚨 ALERT RECEIVED: ${alert.message}');
+      _triggerAlert(alert);
+    }, onError: (e) {
+      print('[PoliceScreen] Alert stream error: $e');
+    });
   }
 
   void _updateDistanceToNearest() {
@@ -724,6 +736,46 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
   Widget _buildMapControls() {
     return Column(
       children: [
+        // Scan for ambulances button
+        FloatingActionButton.small(
+          heroTag: 'scan',
+          backgroundColor: Colors.purple,
+          onPressed: () {
+            print('[PoliceScreen] 📡 Scanning for ambulances...');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                    SizedBox(width: 12),
+                    Text('Scanning for ambulances...'),
+                  ],
+                ),
+                duration: Duration(seconds: 2),
+              ),
+            );
+            
+            _socketService.scanAmbulances(onResult: (ambulances) {
+              if (mounted) {
+                for (var amb in ambulances) {
+                  setState(() => _activeAmbulances[amb.ambulanceId] = amb);
+                }
+                _updateDistanceToNearest();
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Found ${ambulances.length} active ambulances'),
+                    backgroundColor: ambulances.isNotEmpty ? Colors.green : Colors.orange,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            });
+          },
+          tooltip: 'Scan for Ambulances',
+          child: const Icon(Icons.radar, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
         FloatingActionButton.small(
           heroTag: 'zoomIn',
           backgroundColor: Colors.white,
@@ -781,6 +833,33 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
           },
           tooltip: 'Test Vibration',
           child: const Icon(Icons.vibration, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
+        // Reconnect button
+        FloatingActionButton.small(
+          heroTag: 'reconnect',
+          backgroundColor: Colors.green,
+          onPressed: () async {
+            print('[PoliceScreen] Manual reconnect triggered');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Reconnecting to server...'), duration: Duration(seconds: 1)),
+            );
+            
+            // Disconnect and reconnect
+            _socketService.disconnect();
+            await Future.delayed(const Duration(milliseconds: 500));
+            _socketService.connectAndListen(
+              userId: widget.userId, 
+              role: 'police', 
+              location: _currentBaseLocation
+            );
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Reconnected! Ready to receive updates.'), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
+            );
+          },
+          tooltip: 'Reconnect',
+          child: const Icon(Icons.refresh, color: Colors.white),
         ),
       ],
     );

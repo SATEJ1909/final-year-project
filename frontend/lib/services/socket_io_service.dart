@@ -269,6 +269,47 @@ class SocketService with ChangeNotifier {
     debugPrint('[SocketService] Updated police location: $payload');
   }
 
+  /// Scan for active ambulances in the area
+  void scanAmbulances({Function(List<AmbulancePosition>)? onResult}) {
+    if (_socket == null || !_socket!.connected) {
+      debugPrint('[SocketService] Cannot scan: socket not connected');
+      onResult?.call([]);
+      return;
+    }
+    
+    debugPrint('[SocketService] 📡 Scanning for active ambulances...');
+    
+    // Listen for scan result
+    _socket!.once('scanResult', (data) {
+      debugPrint('[SocketService] Scan result received: $data');
+      try {
+        if (data['success'] == true && data['ambulances'] != null) {
+          final List<dynamic> ambulances = data['ambulances'];
+          final List<AmbulancePosition> positions = ambulances
+              .map((a) => AmbulancePosition.fromJson(a))
+              .toList();
+          
+          // Add each to the position stream so they show on map
+          for (var pos in positions) {
+            _positionUpdateController.add(pos);
+          }
+          
+          onResult?.call(positions);
+          debugPrint('[SocketService] ✓ Found ${positions.length} ambulances');
+        } else {
+          debugPrint('[SocketService] Scan returned no results or failed');
+          onResult?.call([]);
+        }
+      } catch (e) {
+        debugPrint('[SocketService] Error parsing scan result: $e');
+        onResult?.call([]);
+      }
+    });
+    
+    // Send scan request
+    _socket!.emit('scanAmbulances', {});
+  }
+
   void disconnect() {
     _socket?.dispose();
     _socket = null;
