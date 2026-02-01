@@ -170,14 +170,39 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
     if (!mounted) return;
 
     _alertCount++; // Track alert count
+    print('[PoliceScreen] ⚠️ ALERT TRIGGERED: ${alert.message}');
 
-    // Physical feedback
-    if (await Vibration.hasVibrator() ?? false) {
-      Vibration.vibrate(pattern: [0, 500, 200, 500]);
+    // Physical feedback - improved with stronger vibration
+    try {
+      final hasVibrator = await Vibration.hasVibrator();
+      print('[PoliceScreen] Has vibrator: $hasVibrator');
+      
+      if (hasVibrator == true) {
+        // Use a stronger vibration pattern: [wait, vibrate, pause, vibrate, pause, vibrate]
+        // Pattern: 0ms wait, 800ms vibrate, 200ms pause, 800ms vibrate, 200ms pause, 800ms vibrate
+        await Vibration.vibrate(pattern: [0, 800, 200, 800, 200, 800], intensities: [0, 255, 0, 255, 0, 255]);
+        print('[PoliceScreen] Vibration triggered with pattern');
+      }
+      
+      // Also try amplitude-based vibration as fallback
+      if (hasVibrator == true) {
+        final hasAmplitude = await Vibration.hasAmplitudeControl();
+        print('[PoliceScreen] Has amplitude control: $hasAmplitude');
+        if (hasAmplitude == true) {
+          await Vibration.vibrate(duration: 1000, amplitude: 255);
+        }
+      }
+    } catch (e) {
+      print('[PoliceScreen] Vibration error: $e');
     }
 
     // Sound feedback
-    try { await _audioPlayer.play(AssetSource('sounds/siren.mp3')); } catch (e) {}
+    try { 
+      await _audioPlayer.play(AssetSource('sounds/siren.mp3')); 
+      print('[PoliceScreen] Playing alert sound');
+    } catch (e) {
+      print('[PoliceScreen] Audio error: $e');
+    }
 
     // Visual feedback
     setState(() => _currentAlert = alert);
@@ -384,7 +409,19 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    const Icon(Icons.location_searching, color: Colors.blueAccent),
+                    // GPS button to use current location
+                    InkWell(
+                      onTap: _fetchAndSetCurrentLocation,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.my_location, color: Colors.blueAccent, size: 24),
+                      ),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: DropdownButtonFormField<String>(
@@ -403,6 +440,73 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
         ),
       ),
     );
+  }
+
+  /// Fetch current GPS location and set as base location
+  Future<void> _fetchAndSetCurrentLocation() async {
+    try {
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+              SizedBox(width: 12),
+              Text('Fetching GPS location...'),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled. Please enable GPS.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied'), backgroundColor: Colors.red),
+          );
+          return;
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permissions are permanently denied'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+
+      Position p = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      
+      if (mounted) {
+        _setNewBaseLocation(
+          LatLng(p.latitude, p.longitude),
+          'My GPS Location'
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Location set: ${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Police GPS acquisition failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to get GPS: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Widget _buildEnhancedStatsWidget() {
@@ -647,6 +751,36 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
             _mapController.move(_currentBaseLocation, 15.0);
           },
           child: const Icon(Icons.my_location, color: Colors.white),
+        ),
+        const SizedBox(height: 8),
+        // Test vibration button
+        FloatingActionButton.small(
+          heroTag: 'testVibration',
+          backgroundColor: Colors.orange,
+          onPressed: () async {
+            try {
+              final hasVibrator = await Vibration.hasVibrator();
+              print('[PoliceScreen] Test: Has vibrator: $hasVibrator');
+              
+              if (hasVibrator == true) {
+                await Vibration.vibrate(duration: 500, amplitude: 255);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Vibration triggered!'), backgroundColor: Colors.green, duration: Duration(seconds: 1)),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('No vibrator on this device'), backgroundColor: Colors.red, duration: Duration(seconds: 1)),
+                );
+              }
+            } catch (e) {
+              print('[PoliceScreen] Vibration test error: $e');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Vibration error: $e'), backgroundColor: Colors.red),
+              );
+            }
+          },
+          tooltip: 'Test Vibration',
+          child: const Icon(Icons.vibration, color: Colors.white),
         ),
       ],
     );
