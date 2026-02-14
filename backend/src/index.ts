@@ -96,6 +96,49 @@ async function main() {
       }
     });
 
+    // NEW: Scan for active ambulances - returns all known ambulance positions
+    socket.on('scanAmbulances', async (payload, callback) => {
+      try {
+        console.log(`[Server] 📡 Scan requested by socket ${socket.id}`);
+
+        // Get all active ambulances from Redis (stored with their locations)
+        const ambulanceGeoKey = 'ambulance_locations';
+        const ambulances = await redisClient.geoSearch(ambulanceGeoKey,
+          { longitude: 77.7796, latitude: 20.9374 }, // Center point (Amravati)
+          { radius: 100, unit: 'km' } // Large radius to get all
+        );
+
+        // Get positions for each ambulance
+        const ambulanceData = [];
+        for (const ambId of ambulances) {
+          const pos = await redisClient.geoPos(ambulanceGeoKey, ambId);
+          if (pos && pos[0]) {
+            ambulanceData.push({
+              ambulanceId: ambId,
+              lat: pos[0].latitude,
+              lng: pos[0].longitude,
+            });
+          }
+        }
+
+        console.log(`[Server] Found ${ambulanceData.length} active ambulances`);
+
+        // Send response back via callback or emit
+        if (typeof callback === 'function') {
+          callback({ success: true, ambulances: ambulanceData });
+        } else {
+          socket.emit('scanResult', { success: true, ambulances: ambulanceData });
+        }
+      } catch (err) {
+        console.error('[Server] Error scanning ambulances:', err);
+        if (typeof callback === 'function') {
+          callback({ success: false, error: 'Scan failed' });
+        } else {
+          socket.emit('scanResult', { success: false, error: 'Scan failed' });
+        }
+      }
+    });
+
     socket.on('journey_end', async (payload) => {
       // Logic to handle the end of a trip
       // e.g., mark driver as 'available', remove from active trips, etc.

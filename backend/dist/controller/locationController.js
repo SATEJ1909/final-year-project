@@ -48,6 +48,19 @@ export async function handleUpdateLocation(io, payload) {
         return;
     }
     console.log(`[LocationController] Location update from ${ambulanceId}: (${lat}, ${lng})${heading !== undefined ? ` heading: ${heading}°` : ''}`);
+    // Store ambulance location in Redis for scan feature
+    const AMBULANCE_GEO_KEY = 'ambulance_locations';
+    try {
+        await redisClient.geoAdd(AMBULANCE_GEO_KEY, {
+            longitude: lng,
+            latitude: lat,
+            member: ambulanceId,
+        });
+        console.log(`[LocationController] ✓ Stored ambulance ${ambulanceId} location in Redis`);
+    }
+    catch (err) {
+        console.error('[LocationController] Error storing ambulance location:', err);
+    }
     // 1. Broadcast the new location to ALL clients in the 'police' room for general map updates.
     const positionData = { ambulanceId, lat, lng, heading };
     io.to('police').emit('ambulancePositionUpdate', positionData);

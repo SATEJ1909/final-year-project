@@ -9,7 +9,7 @@ class OSMSearchService {
     if (query.trim().isEmpty) return [];
 
     final url =
-        "https://nominatim.openstreetmap.org/search?q=$query&format=json&addressdetails=1&limit=5";
+        "https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&addressdetails=1&limit=5";
 
     final response = await _dio.get(url);
 

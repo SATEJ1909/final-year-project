@@ -15,7 +15,10 @@ class MapApiService {
     final url = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving/$startCoord;$destCoord?overview=full&geometries=geojson');
 
-    final response = await http.get(url);
+    final response = await http.get(url).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw Exception('Route request timed out. Please try again.'),
+    );
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch route: ${response.statusCode}');
     }

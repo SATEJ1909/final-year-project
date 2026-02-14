@@ -4,6 +4,7 @@ import redisClient from '../redisClient.js';
 // --- Redis Keys ---
 // Using constants prevents typos and makes the code easier to maintain.
 const POLICE_GEO_KEY = 'police_locations'; // A Redis Geospatial set for police locations.
+const AMBULANCE_GEO_KEY = 'ambulance_locations'; // A Redis Geospatial set for ambulance locations.
 const USER_SOCKET_HASH_KEY = 'user_sockets'; // A Redis Hash mapping userId to their unique socket.id.
 
 // --- TypeScript Interfaces for Payloads ---
@@ -64,12 +65,24 @@ export async function handleJoin(socket: Socket, payload: JoinPayload): Promise<
  */
 export async function handleUpdateLocation(io: Server, payload: LocationUpdatePayload): Promise<void> {
   const { ambulanceId, lat, lng, heading } = payload;
-  if (!ambulanceId || !lat || !lng) {
+  if (!ambulanceId || lat == null || lng == null) {
     console.warn('[LocationController] Invalid location update payload:', payload);
     return;
   }
 
   console.log(`[LocationController] Location update from ${ambulanceId}: (${lat}, ${lng})${heading !== undefined ? ` heading: ${heading}°` : ''}`);
+
+  // Store ambulance location in Redis for scan feature
+  try {
+    await redisClient.geoAdd(AMBULANCE_GEO_KEY, {
+      longitude: lng,
+      latitude: lat,
+      member: ambulanceId,
+    });
+    console.log(`[LocationController] ✓ Stored ambulance ${ambulanceId} location in Redis`);
+  } catch (err) {
+    console.error('[LocationController] Error storing ambulance location:', err);
+  }
 
   // 1. Broadcast the new location to ALL clients in the 'police' room for general map updates.
   const positionData = { ambulanceId, lat, lng, heading };
@@ -123,6 +136,7 @@ export async function handleDisconnect(socket: Socket): Promise<void> {
     // Remove the user from our Redis data stores.
     await redisClient.hDel(USER_SOCKET_HASH_KEY, userId);
     await redisClient.zRem(POLICE_GEO_KEY, userId); // zRem removes from geo index
+    await redisClient.zRem(AMBULANCE_GEO_KEY, userId); // Also clean up ambulance location
     console.log(`[LocationController] ✓ Cleaned up data for ${userId}`);
   } else {
     console.log(`[LocationController] Socket ${socket.id} disconnected (no user mapping found)`);

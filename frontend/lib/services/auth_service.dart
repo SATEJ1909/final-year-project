@@ -73,12 +73,14 @@ class AuthService {
         return true;
       } else {
         // Handle server errors (e.g., user already exists, validation error).
+        String errorMessage = 'Signup failed with status ${response.statusCode}';
         try {
           final errorBody = jsonDecode(response.body);
-          throw Exception('Failed to sign up: ${errorBody['message'] ?? 'Unknown error'}');
-        } catch (e) {
-          throw Exception('Signup failed with status ${response.statusCode}');
-        }
+          if (errorBody['message'] != null) {
+            errorMessage = errorBody['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
       }
     } on Exception catch (e) {
       // Handle network errors or other exceptions.
@@ -130,12 +132,14 @@ class AuthService {
         return loginResp;
       } else {
         // Handle server errors (e.g., invalid credentials).
+        String errorMessage = 'Login failed with status ${response.statusCode}';
         try {
           final errorBody = jsonDecode(response.body);
-          throw Exception('Failed to log in: ${errorBody['message'] ?? 'Unknown error'}');
-        } catch (e) {
-          throw Exception('Login failed with status ${response.statusCode}');
-        }
+          if (errorBody['message'] != null) {
+            errorMessage = errorBody['message'];
+          }
+        } catch (_) {}
+        throw Exception(errorMessage);
       }
     } on Exception catch (e) {
       // Handle network errors or other exceptions.
