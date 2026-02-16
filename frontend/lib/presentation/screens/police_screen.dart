@@ -153,19 +153,50 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
   Future<void> _getInitialLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('GPS is disabled. Please enable location services.'), backgroundColor: Colors.orange),
+          );
+        }
+        return;
+      }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Location permission denied'), backgroundColor: Colors.red),
+            );
+          }
+          return;
+        }
       }
       
-      if (permission == LocationPermission.deniedForever) return;
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission permanently denied. Enable in settings.'), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
 
-      Position p = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Try high accuracy first, fallback to low
+      Position p;
+      try {
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
+      } catch (_) {
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 10),
+        );
+      }
       
       if (mounted) {
         _setNewBaseLocation(
@@ -175,6 +206,11 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
       }
     } catch (e) {
       print('Police GPS acquisition failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('GPS failed: $e. Using default location.'), backgroundColor: Colors.orange),
+        );
+      }
     }
   }
 
@@ -285,7 +321,7 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
             mapController: _mapController,
             options: MapOptions(initialCenter: _currentBaseLocation, initialZoom: 14.5),
             children: [
-              TileLayer(urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: const ['a', 'b', 'c']),
+              TileLayer(urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', subdomains: const ['a', 'b', 'c'], userAgentPackageName: 'com.ats.ambulancetracker'),
 
               // 2. ANIMATED PULSE ZONE
               AnimatedBuilder(
@@ -497,9 +533,19 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
         return;
       }
 
-      Position p = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Try high accuracy first, fallback to low
+      Position p;
+      try {
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
+      } catch (_) {
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 10),
+        );
+      }
       
       if (mounted) {
         _setNewBaseLocation(

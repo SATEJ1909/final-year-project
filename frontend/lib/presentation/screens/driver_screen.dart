@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -69,12 +70,15 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 3),
     ).listen((p) {
       setState(() => _currentSpeed = p.speed * 3.6); // m/s to km/h
-      _onLocationNew(LatLng(p.latitude, p.longitude));
+      // Use GPS-reported heading when speed is sufficient (> ~1 m/s)
+      final gpsHeading = (p.speed > 1.0 && p.heading >= 0) ? p.heading : null;
+      _onLocationNew(LatLng(p.latitude, p.longitude), gpsHeading: gpsHeading);
     });
   }
 
-  void _onLocationNew(LatLng target) {
-    double heading = _calculateAngle(_currentPosition, target);
+  void _onLocationNew(LatLng target, {double? gpsHeading}) {
+    // Prefer GPS heading when available, fallback to calculated heading
+    double heading = gpsHeading ?? _calculateAngle(_currentPosition, target);
     
     // Add to route history for trail
     setState(() {
@@ -103,9 +107,12 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
   }
 
   double _calculateAngle(LatLng a, LatLng b) {
-    double dLon = (b.longitude - a.longitude);
-    double y = math.sin(dLon) * math.cos(b.latitude);
-    double x = math.cos(a.latitude) * math.sin(b.latitude) - math.sin(a.latitude) * math.cos(b.latitude) * math.cos(dLon);
+    // Convert degrees to radians for trig functions
+    double lat1 = a.latitude * (math.pi / 180);
+    double lat2 = b.latitude * (math.pi / 180);
+    double dLon = (b.longitude - a.longitude) * (math.pi / 180);
+    double y = math.sin(dLon) * math.cos(lat2);
+    double x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
     return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
   }
 
@@ -157,10 +164,20 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
         return;
       }
 
-      // Get current position
-      Position p = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // Get current position with timeout to prevent hanging
+      Position p;
+      try {
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 10),
+        );
+      } catch (_) {
+        // Fallback: try with lower accuracy if high accuracy times out
+        p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 10),
+        );
+      }
       if (mounted) {
         setState(() => _currentPosition = LatLng(p.latitude, p.longitude));
         _mapController.move(_currentPosition, 16.0);
@@ -209,6 +226,7 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
               TileLayer(
                 urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains: const ['a', 'b', 'c'],
+                userAgentPackageName: 'com.ats.ambulancetracker',
               ),
               
               // Route trail polyline
@@ -384,25 +402,64 @@ class _DriverScreenState extends State<DriverScreen> with TickerProviderStateMix
             },
             onEnd: () => setState(() {}), // Restart animation
           ),
-        // Main marker
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: Colors.red,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.red.withOpacity(0.5),
-                blurRadius: 15,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: const Icon(Icons.local_hospital, color: Colors.white, size: 28),
+        // Directional arrow marker — points UP (forward direction)
+        CustomPaint(
+          size: const Size(55, 55),
+          painter: _DirectionArrowPainter(isLive: _isLive),
         ),
+        // Hospital icon in center
+        const Icon(Icons.local_hospital, color: Colors.white, size: 18),
       ],
     );
+  }
+}
+
+/// Custom painter that draws a navigation-style arrow (like Google Maps)
+/// The arrow points UP by default — rotation is applied via Transform.rotate
+class _DirectionArrowPainter extends CustomPainter {
+  final bool isLive;
+  _DirectionArrowPainter({required this.isLive});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // Outer glow shadow
+    final shadowPaint = Paint()
+      ..color = (isLive ? Colors.red : Colors.grey).withOpacity(0.4)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    canvas.drawCircle(center, radius * 0.7, shadowPaint);
+
+    // Main body circle
+    final bodyPaint = Paint()
+      ..color = isLive ? Colors.red : Colors.grey[700]!
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, radius * 0.55, bodyPaint);
+
+    // White border
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(center, radius * 0.55, borderPaint);
+
+    // Direction arrow/chevron pointing UP
+    final arrowPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final arrowPath = ui.Path();
+    // Upward-pointing triangle at top of the circle
+    arrowPath.moveTo(center.dx, center.dy - radius * 0.85); // top tip
+    arrowPath.lineTo(center.dx - radius * 0.25, center.dy - radius * 0.45);
+    arrowPath.lineTo(center.dx + radius * 0.25, center.dy - radius * 0.45);
+    arrowPath.close();
+    canvas.drawPath(arrowPath, arrowPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DirectionArrowPainter oldDelegate) {
+    return oldDelegate.isLive != isLive;
   }
 }

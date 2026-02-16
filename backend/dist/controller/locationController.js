@@ -3,6 +3,7 @@ import redisClient from '../redisClient.js';
 // --- Redis Keys ---
 // Using constants prevents typos and makes the code easier to maintain.
 const POLICE_GEO_KEY = 'police_locations'; // A Redis Geospatial set for police locations.
+const AMBULANCE_GEO_KEY = 'ambulance_locations'; // A Redis Geospatial set for ambulance locations.
 const USER_SOCKET_HASH_KEY = 'user_sockets'; // A Redis Hash mapping userId to their unique socket.id.
 /**
  * Handles a new user connecting and identifying themselves.
@@ -43,13 +44,12 @@ export async function handleJoin(socket, payload) {
  */
 export async function handleUpdateLocation(io, payload) {
     const { ambulanceId, lat, lng, heading } = payload;
-    if (!ambulanceId || !lat || !lng) {
+    if (!ambulanceId || lat == null || lng == null) {
         console.warn('[LocationController] Invalid location update payload:', payload);
         return;
     }
     console.log(`[LocationController] Location update from ${ambulanceId}: (${lat}, ${lng})${heading !== undefined ? ` heading: ${heading}°` : ''}`);
     // Store ambulance location in Redis for scan feature
-    const AMBULANCE_GEO_KEY = 'ambulance_locations';
     try {
         await redisClient.geoAdd(AMBULANCE_GEO_KEY, {
             longitude: lng,
@@ -108,6 +108,7 @@ export async function handleDisconnect(socket) {
         // Remove the user from our Redis data stores.
         await redisClient.hDel(USER_SOCKET_HASH_KEY, userId);
         await redisClient.zRem(POLICE_GEO_KEY, userId); // zRem removes from geo index
+        await redisClient.zRem(AMBULANCE_GEO_KEY, userId); // Also clean up ambulance location
         console.log(`[LocationController] ✓ Cleaned up data for ${userId}`);
     }
     else {
