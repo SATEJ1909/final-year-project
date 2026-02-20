@@ -24,6 +24,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
 app.use(express.json());
 app.use("/api/v1/user", userRouter)
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
 
 async function main() {
   await mongoose.connect(process.env.DATABASE_URL as string);
