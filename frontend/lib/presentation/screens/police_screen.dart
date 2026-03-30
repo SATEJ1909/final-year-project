@@ -351,7 +351,12 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
                     width: 250, height: 250,
                     child: Opacity(
                       opacity: 0.3,
-                      child: Lottie.network('https://lottie.host/57398313-9776-4b33-9c4b-e03170975b6a/Look7G6e0V.json'),
+                      child: Lottie.network(
+                        'https://lottie.host/57398313-9776-4b33-9c4b-e03170975b6a/Look7G6e0V.json',
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.radar, color: Colors.blueAccent, size: 80);
+                        },
+                      ),
                     ),
                   ),
                   // Police HQ
@@ -671,7 +676,13 @@ class _PoliceScreenState extends State<PoliceScreen> with TickerProviderStateMix
         ),
         child: Row(
           children: [
-            Lottie.network('https://lottie.host/8e2f83f2-8951-40c0-9366-267389658742/vX7G7G6e0V.json', width: 40, height: 40),
+            Lottie.network(
+              'https://lottie.host/8e2f83f2-8951-40c0-9366-267389658742/vX7G7G6e0V.json',
+              width: 40, height: 40,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(Icons.warning_amber, color: Colors.yellow, size: 40);
+              },
+            ),
             const SizedBox(width: 15),
             Expanded(
               child: Column(
